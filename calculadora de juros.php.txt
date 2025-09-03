@@ -1,0 +1,407 @@
+<?php
+/**
+ * Plugin Name: Calculadora de Juros Empréstimo
+ * Description: Calcula a taxa de juros mensal efetiva (tabela Price) a partir do valor do empréstimo, valor da parcela e prazo (em meses). Exibe equivalentes trimestral e anual e o total de juros pagos.
+ * Version: 1.0.0
+ * Author: sealdem santos
+ * Text Domain: calc-juros-emprestimo
+ */
+
+if (!defined('ABSPATH')) { exit; }
+
+class CJE_Calculadora_Juros_Emprestimo {
+    public function __construct() {
+        add_shortcode('calculadora_juros_emprestimo', [$this, 'render_shortcode']);
+    }
+
+    public function render_shortcode($atts = []) {
+        $uid = 'cje_' . wp_generate_uuid4(); // id único por instância
+        ob_start();
+        ?>
+        <div id="<?php echo esc_attr($uid); ?>" class="cje-wrap">
+            <style>
+                /* ====== Paleta: Azul-escuro & Prata ====== */
+                #<?php echo $uid; ?>{
+                    --cje-blue-900:#0F2C59; /* azul escuro */
+                    --cje-blue-700:#1B3B6F;
+                    --cje-blue-100:#E8EEF7;
+                    --cje-silver:#C0C0C0;   /* prata */
+                    --cje-silver-200:#E5E7EB;
+                    --cje-bg:#F6F8FB;
+                    --cje-text:#0B1220;
+                    --cje-ok:#0f766e;
+                    --cje-warn:#b45309;
+                    --cje-err:#b91c1c;
+                }
+                #<?php echo $uid; ?> .cje-card{
+                    background:#fff;
+                    border:1px solid var(--cje-silver-200);
+                    border-radius:16px;
+                    box-shadow:0 6px 24px rgba(15,44,89,0.08);
+                }
+                #<?php echo $uid; ?> .cje-header{
+                    background: linear-gradient(135deg, var(--cje-blue-900), var(--cje-blue-700));
+                    color:#fff;
+                    border-radius:16px 16px 0 0;
+                    padding:18px 20px;
+                }
+                #<?php echo $uid; ?> .cje-title{
+                    margin:0;
+                    font-size:1.15rem;
+                    font-weight:700;
+                    letter-spacing:.3px;
+                    display:flex;align-items:center;gap:.6rem;
+                }
+                #<?php echo $uid; ?> .cje-body{padding:20px;background:var(--cje-bg);}
+
+                #<?php echo $uid; ?> .cje-grid{
+                    display:grid;gap:16px;
+                    grid-template-columns: repeat(12,1fr);
+                }
+                @media (max-width: 780px){#<?php echo $uid; ?> .cje-grid{grid-template-columns: 1fr;}}
+
+                #<?php echo $uid; ?> .cje-field{
+                    grid-column: span 4 / span 4;
+                }
+                #<?php echo $uid; ?> .cje-field.wide{grid-column: span 12 / span 12;}
+                @media (max-width: 780px){
+                    #<?php echo $uid; ?> .cje-field{grid-column: 1 / -1;}
+                }
+                #<?php echo $uid; ?> label{
+                    display:block;
+                    font-size:.92rem;
+                    color:var(--cje-blue-900);
+                    margin:2px 0 6px;
+                    font-weight:600;
+                }
+                #<?php echo $uid; ?> input[type="text"],
+                #<?php echo $uid; ?> input[type="number"]{
+                    width:100%;
+                    background:#fff;
+                    border:1px solid var(--cje-silver-200);
+                    border-radius:12px;
+                    padding:12px 14px;
+                    font-size:1rem;
+                    outline:none;
+                    transition:border .2s, box-shadow .2s;
+                }
+                #<?php echo $uid; ?> input:focus{
+                    border-color:var(--cje-blue-700);
+                    box-shadow:0 0 0 3px rgba(27,59,111,.15);
+                }
+
+                #<?php echo $uid; ?> .cje-help{
+                    font-size:.85rem; color:#465266; margin-top:6px;
+                }
+                #<?php echo $uid; ?> .cje-actions{
+                    display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;
+                }
+                #<?php echo $uid; ?> .cje-btn{
+                    border:none; cursor:pointer;
+                    padding:12px 16px; border-radius:12px;
+                    font-weight:700; letter-spacing:.3px;
+                    transition:transform .06s ease, box-shadow .2s;
+                }
+                #<?php echo $uid; ?> .cje-btn:active{transform:translateY(1px);}
+                #<?php echo $uid; ?> .cje-btn-primary{
+                    background:linear-gradient(135deg, var(--cje-blue-900), var(--cje-blue-700));
+                    color:#fff;
+                    box-shadow:0 10px 24px rgba(27,59,111,.18);
+                }
+                #<?php echo $uid; ?> .cje-btn-secondary{
+                    background:#f9fafb; color:var(--cje-blue-900); border:1px solid var(--cje-silver-200);
+                }
+
+                #<?php echo $uid; ?> .cje-results{
+                    margin-top:18px;
+                    display:grid; gap:14px;
+                    grid-template-columns: repeat(12,1fr);
+                }
+                #<?php echo $uid; ?> .cje-kpi{
+                    grid-column: span 4 / span 4;
+                    background:#fff;border:1px solid var(--cje-silver-200);
+                    border-radius:14px; padding:14px;
+                }
+                @media (max-width:780px){#<?php echo $uid; ?> .cje-kpi{grid-column:1/-1;}}
+                #<?php echo $uid; ?> .cje-kpi .kpi-label{
+                    font-size:.85rem; color:#465266; margin-bottom:6px; display:flex; align-items:center; gap:.4rem;
+                }
+                #<?php echo $uid; ?> .cje-kpi .kpi-value{
+                    font-size:1.25rem; font-weight:800; color:var(--cje-blue-900);
+                }
+
+                #<?php echo $uid; ?> .cje-note{
+                    margin-top:10px; font-size:.85rem; color:#465266;
+                    background:#fff; border:1px dashed var(--cje-silver);
+                    padding:10px 12px; border-radius:12px;
+                }
+
+                #<?php echo $uid; ?> .cje-alert{
+                    margin-top:12px; padding:12px; border-radius:12px; font-size:.92rem; display:none;
+                }
+                #<?php echo $uid; ?> .cje-alert.warn{background:#FFF7ED; color:#7C2D12; border:1px solid #FED7AA;}
+                #<?php echo $uid; ?> .cje-alert.err{background:#FEF2F2; color:#7F1D1D; border:1px solid #FECACA;}
+
+                /* rodapé */
+                #<?php echo $uid; ?> .cje-footer{
+                    padding:12px 16px;
+                    border-top:1px solid var(--cje-silver-200);
+                    color:#4b5563; font-size:.8rem;
+                    background:#fff; border-radius:0 0 16px 16px;
+                }
+            </style>
+
+            <div class="cje-card">
+                <div class="cje-header">
+                    <h3 class="cje-title">📈 Calculadora de Juros de Empréstimo <small style="opacity:.9;font-weight:500;">(tabela Price)</small></h3>
+                </div>
+                <div class="cje-body">
+                    <div class="cje-grid">
+                        <div class="cje-field">
+                            <label for="<?php echo $uid; ?>_principal">Valor do empréstimo</label>
+                            <input id="<?php echo $uid; ?>_principal" type="text" inputmode="decimal" placeholder="Ex.: R$ 20.000,00">
+                            <div class="cje-help">Valor liberado ao cliente (principal).</div>
+                        </div>
+                        <div class="cje-field">
+                            <label for="<?php echo $uid; ?>_parcela">Valor da parcela</label>
+                            <input id="<?php echo $uid; ?>_parcela" type="text" inputmode="decimal" placeholder="Ex.: R$ 650,00">
+                            <div class="cje-help">Parcela fixa mensal (sem atrasos).</div>
+                        </div>
+                        <div class="cje-field">
+                            <label for="<?php echo $uid; ?>_prazo">Prazo (meses)</label>
+                            <input id="<?php echo $uid; ?>_prazo" type="number" min="1" step="1" placeholder="Ex.: 36">
+                            <div class="cje-help">Informe o número de parcelas (mensais).</div>
+                        </div>
+
+                        <div class="cje-field wide">
+                            <div class="cje-actions">
+                                <button class="cje-btn cje-btn-primary" id="<?php echo $uid; ?>_calc">Calcular</button>
+                                <button class="cje-btn cje-btn-secondary" id="<?php echo $uid; ?>_clear">Limpar</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="cje-alert warn" id="<?php echo $uid; ?>_warn"></div>
+                    <div class="cje-alert err" id="<?php echo $uid; ?>_err"></div>
+
+                    <div class="cje-results" id="<?php echo $uid; ?>_results" style="display:none;">
+                        <div class="cje-kpi">
+                            <div class="kpi-label">Juros mensal (efetivo)</div>
+                            <div class="kpi-value" id="<?php echo $uid; ?>_kpi_mes"></div>
+                        </div>
+                        <div class="cje-kpi">
+                            <div class="kpi-label">Juros trimestral (equivalente)</div>
+                            <div class="kpi-value" id="<?php echo $uid; ?>_kpi_tri"></div>
+                        </div>
+                        <div class="cje-kpi">
+                            <div class="kpi-label">Juros anual (equivalente)</div>
+                            <div class="kpi-value" id="<?php echo $uid; ?>_kpi_ano"></div>
+                        </div>
+                        <div class="cje-kpi">
+                            <div class="kpi-label">Total pago (parcelas × prazo)</div>
+                            <div class="kpi-value" id="<?php echo $uid; ?>_kpi_total"></div>
+                        </div>
+                        <div class="cje-kpi">
+                            <div class="kpi-label">Juros totais no período</div>
+                            <div class="kpi-value" id="<?php echo $uid; ?>_kpi_juros"></div>
+                        </div>
+                        <div class="cje-kpi">
+                            <div class="kpi-label">Observação</div>
+                            <div class="kpi-value" id="<?php echo $uid; ?>_kpi_obs" style="font-size:.95rem;font-weight:600;"></div>
+                        </div>
+                    </div>
+
+                    <div class="cje-note">
+                        💡 Cálculo baseado em <strong>tabela Price</strong> com parcelas mensais fixas. Resultados são estimativas e não consideram IOF, seguros ou outras tarifas.
+                    </div>
+                </div>
+                <div class="cje-footer">
+                    Estilo: azul-escuro & prata • Compatível com dispositivos móveis • Shortcode: <code>[calculadora_juros_emprestimo]</code>
+                </div>
+            </div>
+
+            <script>
+                (function(){
+                    const $ = (sel)=>document.querySelector('#<?php echo $uid; ?> '+sel);
+
+                    const elPrincipal = $('#_<?php echo $uid; ?>'.replace('#_','') + ' #<?php echo $uid; ?>_principal') || document.getElementById('<?php echo $uid; ?>_principal');
+                    const elParcela   = document.getElementById('<?php echo $uid; ?>_parcela');
+                    const elPrazo     = document.getElementById('<?php echo $uid; ?>_prazo');
+                    const btnCalc     = document.getElementById('<?php echo $uid; ?>_calc');
+                    const btnClear    = document.getElementById('<?php echo $uid; ?>_clear');
+
+                    const boxWarn = document.getElementById('<?php echo $uid; ?>_warn');
+                    const boxErr  = document.getElementById('<?php echo $uid; ?>_err');
+                    const results = document.getElementById('<?php echo $uid; ?>_results');
+
+                    const kMes = document.getElementById('<?php echo $uid; ?>_kpi_mes');
+                    const kTri = document.getElementById('<?php echo $uid; ?>_kpi_tri');
+                    const kAno = document.getElementById('<?php echo $uid; ?>_kpi_ano');
+                    const kTot = document.getElementById('<?php echo $uid; ?>_kpi_total');
+                    const kJur = document.getElementById('<?php echo $uid; ?>_kpi_juros');
+                    const kObs = document.getElementById('<?php echo $uid; ?>_kpi_obs');
+
+                    const fmtMoney = new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'});
+                    const fmtPct = (x)=> (x*100).toFixed(2).replace('.',',')+'%';
+
+                    function parseNumberBR(v){
+                        if (typeof v === 'number') return v;
+                        if (!v) return NaN;
+                        v = String(v).trim();
+                        v = v.replace(/[^\d.,-]/g,''); // remove R$, espaços etc.
+                        const comma = v.lastIndexOf(',');
+                        const dot   = v.lastIndexOf('.');
+
+                        if (comma > -1 && comma > dot){
+                            // Formato 1.234.567,89
+                            v = v.replace(/\./g,'').replace(',','.');
+                        } else {
+                            // Formato 1234567.89 OU 1234567
+                            v = v.replace(/,/g,'');
+                        }
+                        const num = parseFloat(v);
+                        return isNaN(num) ? NaN : num;
+                    }
+
+                    function annuityPayment(P, i, n){
+                        if (i === 0) return P / n;
+                        return P * (i) / (1 - Math.pow(1 + i, -n));
+                    }
+
+                    // Resolve i em f(i)=0 onde f(i)=Pagamento(i) - A. Usa bisseção com fallback
+                    function solveMonthlyRate(P, A, n){
+                        const f = (i)=> annuityPayment(P, i, n) - A;
+
+                        // Casos simples
+                        const f0 = f(0);
+                        if (Math.abs(f0) < 1e-12) return 0; // parcela exatamente P/n
+                        if (f0 > 0){
+                            // P/n > A => parcela menor que amortização sem juros => taxa negativa
+                            // Não faz sentido para empréstimos comuns; retornamos negativo aproximado via busca curta
+                            // Tente um i negativo até -0.99
+                            let lo = -0.99, hi = 0; // f(lo) < f(0) tipicamente
+                            let flo = f(lo);
+                            // Se não conseguir bracketing válido, retorne null
+                            if (isNaN(flo) || !isFinite(flo)) return null;
+                            // Bisseção
+                            for (let k=0;k<120;k++){
+                                const mid = (lo+hi)/2;
+                                const fm = f(mid);
+                                if (!isFinite(fm)) { hi = mid; continue; }
+                                if (Math.abs(fm) < 1e-12) return mid;
+                                // Queremos f mudar de sinal entre lo e hi
+                                if ((flo<=0 && fm>=0) || (flo>=0 && fm<=0)){ hi = mid; }
+                                else { lo = mid; flo = fm; }
+                            }
+                            return (lo+hi)/2;
+                        }
+
+                        // Normal: A > P/n => taxa positiva
+                        let lo = 0, hi = 1.0; // 0% a 100% ao mês
+                        // Aumenta hi até bracketing
+                        let fhi = f(hi), steps=0;
+                        while (fhi < 0 && steps < 20){ // ainda abaixo do A desejado
+                            hi *= 2; // 100% -> 200% -> 400% ...
+                            fhi = f(hi); steps++;
+                            if (!isFinite(fhi)) break;
+                        }
+                        if (!isFinite(fhi)) return null;
+
+                        // Bisseção robusta
+                        let flo = f0;
+                        for (let k=0;k<120;k++){
+                            const mid = (lo+hi)/2;
+                            const fm = f(mid);
+                            if (!isFinite(fm)) { hi = mid; continue; }
+                            if (Math.abs(fm) < 1e-12) return mid;
+                            // Decide lado
+                            if ((flo<=0 && fm>=0) || (flo>=0 && fm<=0)){
+                                hi = mid;
+                            } else {
+                                lo = mid; flo = fm;
+                            }
+                        }
+                        return (lo+hi)/2;
+                    }
+
+                    function showWarn(msg){
+                        boxWarn.style.display = 'block';
+                        boxWarn.textContent = msg;
+                    }
+                    function clearWarn(){ boxWarn.style.display = 'none'; boxWarn.textContent=''; }
+                    function showErr(msg){
+                        boxErr.style.display = 'block';
+                        boxErr.textContent = msg;
+                    }
+                    function clearErr(){ boxErr.style.display = 'none'; boxErr.textContent=''; }
+
+                    function formatMoneyField(el){
+                        const num = parseNumberBR(el.value);
+                        if (!isNaN(num)){
+                            el.value = fmtMoney.format(num);
+                        }
+                    }
+
+                    // Formatação ao sair do campo
+                    [elPrincipal, elParcela].forEach(el=>{
+                        el.addEventListener('blur', ()=> formatMoneyField(el));
+                    });
+
+                    btnClear.addEventListener('click', (e)=>{
+                        e.preventDefault();
+                        [elPrincipal, elParcela, elPrazo].forEach(el=> el.value = '');
+                        clearWarn(); clearErr();
+                        results.style.display = 'none';
+                    });
+
+                    btnCalc.addEventListener('click', (e)=>{
+                        e.preventDefault();
+                        clearWarn(); clearErr();
+
+                        const P = parseNumberBR(elPrincipal.value);
+                        const A = parseNumberBR(elParcela.value);
+                        const n = parseInt(elPrazo.value,10);
+
+                        if (isNaN(P) || P <= 0){ showErr('Informe um valor de empréstimo válido.'); return; }
+                        if (isNaN(A) || A <= 0){ showErr('Informe um valor de parcela válido.'); return; }
+                        if (!Number.isInteger(n) || n <= 0){ showErr('Informe um prazo (em meses) válido.'); return; }
+
+                        if (A <= (P/n)){
+                            showWarn('A parcela informada é menor ou igual a '+fmtMoney.format(P/n)+' (P/n). Isso indica taxa zero ou negativa, cenário incomum para empréstimos. O resultado poderá não refletir contratos reais.');
+                        }
+
+                        const i = solveMonthlyRate(P, A, n);
+                        if (i === null || !isFinite(i)){
+                            showErr('Não foi possível calcular a taxa com os valores informados. Ajuste os campos e tente novamente.');
+                            results.style.display = 'none';
+                            return;
+                        }
+
+                        const tri = Math.pow(1+i, 3) - 1;
+                        const ano = Math.pow(1+i, 12) - 1;
+
+                        const totalPago = A * n;
+                        const jurosTotais = totalPago - P;
+
+                        kMes.textContent = fmtPct(i)+' a.m.';
+                        kTri.textContent = fmtPct(tri)+' a.t.';
+                        kAno.textContent = fmtPct(ano)+' a.a.';
+                        kTot.textContent = fmtMoney.format(totalPago);
+                        kJur.textContent = fmtMoney.format(jurosTotais);
+                        kObs.textContent = (i>=0) ? 'Taxa positiva estimada' : 'Taxa zero/negativa estimada';
+
+                        results.style.display = 'grid';
+
+                        // Reformatar campos após cálculo
+                        formatMoneyField(elPrincipal);
+                        formatMoneyField(elParcela);
+                    });
+                })();
+            </script>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+}
+
+new CJE_Calculadora_Juros_Emprestimo();
